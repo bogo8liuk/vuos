@@ -11,6 +11,10 @@ if len(sys.argv) < 2 or not os.path.isfile(sys.argv[1]):
 code = '''#ifndef __VU_SYSCALL_DEFS__
 #define __VU_SYSCALL_DEFS__
 
+/* Missing symbols definitions */
+
+#include <syscall_no.h>
+
 /* Arch independent definitions */
 
 '''

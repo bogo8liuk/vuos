@@ -13,11 +13,17 @@ add_custom_command(OUTPUT ${VU_DYN_SOURCE_PATH}
 execute_process(COMMAND ${VU_SCRIPT_PATH}/syscall_deps.sh ${CMAKE_C_COMPILER}
 		OUTPUT_VARIABLE SYSCALL_DEPS)
 
+# syscall_no.h
+add_custom_command(OUTPUT ${SYSCALL_NO}
+	COMMAND ${VU_SCRIPT_PATH}/syscall_number_gen.py ${VU_SYSCALL_CONF} > ${SYSCALL_NO}
+	COMMENT "Generating missing (arch-dependant) syscall numbers"
+	DEPENDS ${VU_SYSCALL_CONF} ${VU_DYN_HEADER_PATH})
+
 # syscall_defs.h
 add_custom_command(OUTPUT ${VU_SYSCALL_DEFS}
 		COMMAND ${VU_SCRIPT_PATH}/syscall_defs_gen.py ${VU_SYSCALL_CONF} > ${VU_SYSCALL_DEFS}
 		COMMENT "Populating VU syscall list"
-		DEPENDS ${VU_SYSCALL_CONF} ${VU_DYN_HEADER_PATH})
+		DEPENDS ${SYSCALL_NO} ${VU_SYSCALL_CONF} ${VU_DYN_HEADER_PATH})
 
 # r_table.h
 add_custom_command(OUTPUT ${R_TABLE_H}

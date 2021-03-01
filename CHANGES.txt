@@ -1,0 +1,193 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 41ec61d..edc102c 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -17,6 +17,7 @@ set(VU_HEADERS ${PROJECT_SOURCE_DIR}/include)
+ set(VU_DYN_SOURCE_PATH ${CMAKE_BINARY_DIR}/umvu_dynsrc)
+ set(VU_DYN_HEADER_PATH ${CMAKE_BINARY_DIR}/include)
+ 
++set(SYSCALL_NO ${VU_DYN_HEADER_PATH}/syscall_no.h)
+ set(VU_SYSCALL_DEFS ${VU_DYN_HEADER_PATH}/syscall_defs.h)
+ set(R_TABLE_H ${VU_DYN_HEADER_PATH}/r_table.h)
+ set(VU_SYSNAMES ${VU_DYN_SOURCE_PATH}/syscall_names.c)
+diff --git a/scripts/CMakeLists.txt b/scripts/CMakeLists.txt
+index a2de90e..6fc4ba1 100644
+--- a/scripts/CMakeLists.txt
++++ b/scripts/CMakeLists.txt
+@@ -13,11 +13,17 @@ add_custom_command(OUTPUT ${VU_DYN_SOURCE_PATH}
+ execute_process(COMMAND ${VU_SCRIPT_PATH}/syscall_deps.sh ${CMAKE_C_COMPILER}
+ 		OUTPUT_VARIABLE SYSCALL_DEPS)
+ 
++# syscall_no.h
++add_custom_command(OUTPUT ${SYSCALL_NO}
++		COMMAND ${VU_SCRIPT_PATH}/syscall_number_gen.py ${VU_SYSCALL_CONF} > ${SYSCALL_NO}
++		COMMENT "Generating missing (arch-dependent) syscall numbers"
++		DEPENDS ${VU_SYSCALL_CONF} ${VU_DYN_HEADER_PATH})
++
+ # syscall_defs.h
+ add_custom_command(OUTPUT ${VU_SYSCALL_DEFS}
+ 		COMMAND ${VU_SCRIPT_PATH}/syscall_defs_gen.py ${VU_SYSCALL_CONF} > ${VU_SYSCALL_DEFS}
+ 		COMMENT "Populating VU syscall list"
+-		DEPENDS ${VU_SYSCALL_CONF} ${VU_DYN_HEADER_PATH})
++		DEPENDS ${SYSCALL_NO} ${VU_SYSCALL_CONF} ${VU_DYN_HEADER_PATH})
+ 
+ # r_table.h
+ add_custom_command(OUTPUT ${R_TABLE_H}
+diff --git a/scripts/syscall_defs_gen.py b/scripts/syscall_defs_gen.py
+index 217376d..fe41ea3 100755
+--- a/scripts/syscall_defs_gen.py
++++ b/scripts/syscall_defs_gen.py
+@@ -11,6 +11,10 @@ if len(sys.argv) < 2 or not os.path.isfile(sys.argv[1]):
+ code = '''#ifndef __VU_SYSCALL_DEFS__
+ #define __VU_SYSCALL_DEFS__
+ 
++/* Missing symbols definitions */
++
++#include <syscall_no.h>
++
+ /* Arch independent definitions */
+ 
+ '''
+diff --git a/umvu/include/ptrace_defs.h b/umvu/include/ptrace_defs.h
+index fd7c3c3..024138a 100644
+--- a/umvu/include/ptrace_defs.h
++++ b/umvu/include/ptrace_defs.h
+@@ -26,8 +26,8 @@
+         perror(errmsg);                                                        \
+     }
+ 
+-#define P_GETREGS(tracee_tid, regs) PTRACE(PTRACE_GETREGS, tracee_tid, regs)
+-#define P_SETREGS(tracee_tid, regs) PTRACE(PTRACE_SETREGS, tracee_tid, regs)
++#define P_GETREGS(tracee_tid, regs) PTRACE(PTRACE_GETREGSET, tracee_tid, regs)
++#define P_SETREGS(tracee_tid, regs) PTRACE(PTRACE_SETREGSET, tracee_tid, regs)
+ #define P_SYSCALL(tracee_tid, signal) PTRACE(PTRACE_SYSCALL, tracee_tid, signal)
+ #define P_CONT(tracee_tid, signal) PTRACE(PTRACE_CONT, tracee_tid, signal)
+ #define P_LISTEN(tracee_tid, signal) PTRACE(PTRACE_LISTEN, tracee_tid, signal)
+@@ -45,9 +45,9 @@
+     r_ptrace(PTRACE_POKEDATA, tracee_tid, (void *)addr, data)
+ 
+ #define P_GETREGS_NODIE(tracee_tid, regs)                                      \
+-    PTRACE_NODIE(PTRACE_GETREGS, tracee_tid, regs)
++    PTRACE_NODIE(PTRACE_GETREGSET, tracee_tid, regs)
+ #define P_SETREGS_NODIE(tracee_tid, regs)                                      \
+-    PTRACE_NODIE(PTRACE_SETREGS, tracee_tid, regs)
++    PTRACE_NODIE(PTRACE_SETREGSET, tracee_tid, regs)
+ #define P_SYSCALL_NODIE(tracee_tid, signal)                                    \
+     PTRACE_NODIE(PTRACE_SYSCALL, tracee_tid, signal)
+ #define P_CONT_NODIE(tracee_tid, signal)                                    \
+diff --git a/umvu/include/umvu_peekpoke.h b/umvu/include/umvu_peekpoke.h
+index 6aa24ae..a2be570 100644
+--- a/umvu/include/umvu_peekpoke.h
++++ b/umvu/include/umvu_peekpoke.h
+@@ -4,7 +4,8 @@
+ /* umvu_peekpoke: exchange data with the traced/virtualized process */
+ 
+ /*Architecture dependent part*/
+-#if defined(__x86_64__) || defined(__i386__)
++#if defined(__x86_64__) || defined(__i386__) || defined(__aarch64__) \
++	|| defined(__arm__)
+ 
+ #define SYSCALL_ARG_NR 6
+ typedef unsigned long int syscall_arg_t;
+diff --git a/umvu/src/umvu_peekpoke.c b/umvu/src/umvu_peekpoke.c
+index 710f1d6..c50ba18 100644
+--- a/umvu/src/umvu_peekpoke.c
++++ b/umvu/src/umvu_peekpoke.c
+@@ -25,6 +25,7 @@
+ #include <limits.h>
+ #include <sys/uio.h>
+ #include <ptrace_defs.h>
++#include <arch_registers.h>
+ #include <umvu_peekpoke.h>
+ 
+ /* pagesize/pagemask are useful to compute the page boundaries.
+@@ -39,7 +40,7 @@ static unsigned long page_mask;
+ 	 the virtualization of a user process/thread) */
+ static __thread unsigned int tracee_tid;
+ 
+-#if defined(__x86_64__)
++#if defined(__x86_64__) || defined(__aarch64__) || defined (__arm__)
+ void umvu_peek_syscall(struct user_regs_struct *regs,
+ 		struct syscall_descriptor_t *syscall_desc,
+ 		peekpokeop_t op)
+@@ -47,17 +48,17 @@ void umvu_peek_syscall(struct user_regs_struct *regs,
+ 	if (regs && syscall_desc) {
+ 		if (op == PEEK_ARGS) {
+ 			syscall_desc->orig_syscall_number =
+-				syscall_desc->syscall_number = regs->orig_rax;
+-			syscall_desc->syscall_args[0] = regs->rdi;
+-			syscall_desc->syscall_args[1] = regs->rsi;
+-			syscall_desc->syscall_args[2] = regs->rdx;
+-			syscall_desc->syscall_args[3] = regs->r10;
+-			syscall_desc->syscall_args[4] = regs->r8;
+-			syscall_desc->syscall_args[5] = regs->r9;
+-			syscall_desc->prog_counter = regs->rip;
+-			syscall_desc->stack_pointer = regs->rsp;
++				syscall_desc->syscall_number = regs->SYSCALL_NO;
++			syscall_desc->syscall_args[0] = regs->SYSCALL_ARG1;
++			syscall_desc->syscall_args[1] = regs->SYSCALL_ARG2;
++			syscall_desc->syscall_args[2] = regs->SYSCALL_ARG3;
++			syscall_desc->syscall_args[3] = regs->SYSCALL_ARG4;
++			syscall_desc->syscall_args[4] = regs->SYSCALL_ARG5;
++			syscall_desc->syscall_args[5] = regs->SYSCALL_ARG6;
++			syscall_desc->prog_counter = regs->PROGRAM_COUNTER;
++			syscall_desc->stack_pointer = regs->STACK_POINTER;
+ 		} else
+-			syscall_desc->orig_ret_value = regs->rax;
++			syscall_desc->orig_ret_value = regs->SYSCALL_RETURN;
+ 	}
+ }
+ 
+@@ -69,32 +70,32 @@ int umvu_poke_syscall(struct user_regs_struct *regs,
+ 		switch (op) {
+ 			case POKE_ARGS:
+ 				/* regs->rsp is missing as stack pointer should not be modified */
+-				if (regs->orig_rax == (unsigned) syscall_desc->syscall_number &&
+-						regs->rdi == syscall_desc->syscall_args[0] &&
+-						regs->rsi == syscall_desc->syscall_args[1] &&
+-						regs->rdx == syscall_desc->syscall_args[2] &&
+-						regs->r10 == syscall_desc->syscall_args[3] &&
+-						regs->r8 == syscall_desc->syscall_args[4] &&
+-						regs->r9 == syscall_desc->syscall_args[5] &&
+-						regs->rip == syscall_desc->prog_counter)
++				if (regs->SYSCALL_NO == (unsigned) syscall_desc->syscall_number &&
++						regs->SYSCALL_ARG1 == syscall_desc->syscall_args[0] &&
++						regs->SYSCALL_ARG2 == syscall_desc->syscall_args[1] &&
++						regs->SYSCALL_ARG3 == syscall_desc->syscall_args[2] &&
++						regs->SYSCALL_ARG4 == syscall_desc->syscall_args[3] &&
++						regs->SYSCALL_ARG5 == syscall_desc->syscall_args[4] &&
++						regs->SYSCALL_ARG6 == syscall_desc->syscall_args[5] &&
++						regs->PROGRAM_COUNTER == syscall_desc->prog_counter)
+ 					return 0;
+-				regs->orig_rax = regs->rax = syscall_desc->syscall_number;
+-				regs->rdi = syscall_desc->syscall_args[0];
+-				regs->rsi = syscall_desc->syscall_args[1];
+-				regs->rdx = syscall_desc->syscall_args[2];
+-				regs->r10 = syscall_desc->syscall_args[3];
+-				regs->r8 = syscall_desc->syscall_args[4];
+-				regs->r9 = syscall_desc->syscall_args[5];
+-				regs->rip = syscall_desc->prog_counter;
++				regs->SYSCALL_NO = regs->SYSCALL_RETURN = syscall_desc->syscall_number;
++				regs->SYSCALL_ARG1 = syscall_desc->syscall_args[0];
++				regs->SYSCALL_ARG2 = syscall_desc->syscall_args[1];
++				regs->SYSCALL_ARG3 = syscall_desc->syscall_args[2];
++				regs->SYSCALL_ARG4 = syscall_desc->syscall_args[3];
++				regs->SYSCALL_ARG5 = syscall_desc->syscall_args[4];
++				regs->SYSCALL_ARG6 = syscall_desc->syscall_args[5];
++				regs->PROGRAM_COUNTER = syscall_desc->prog_counter;
+ 				break;
+ 			case POKE_RETVALUE:
+-				if (regs->rax == syscall_desc->ret_value)
++				if (regs->SYSCALL_RETURN == syscall_desc->ret_value)
+ 					return 0;
+-				regs->rax = syscall_desc->ret_value;
++				regs->SYSCALL_RETURN = syscall_desc->ret_value;
+ 				break;
+ 			case SKIP_SETRETVALUE:
+-				regs->orig_rax = -1;
+-				regs->rax = syscall_desc->ret_value;
++				regs->SYSCALL_NO = -1;
++				regs->SYSCALL_RETURN = syscall_desc->ret_value;
+ 				break;
+ 		}
+ 		return 1;

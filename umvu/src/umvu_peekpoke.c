@@ -25,6 +25,7 @@
 #include <limits.h>
 #include <sys/uio.h>
 #include <ptrace_defs.h>
+#include <arch_registers.h>
 #include <umvu_peekpoke.h>
 
 /* pagesize/pagemask are useful to compute the page boundaries.
@@ -39,7 +40,7 @@ static unsigned long page_mask;
 	 the virtualization of a user process/thread) */
 static __thread unsigned int tracee_tid;
 
-#if defined(__x86_64__)
+#if defined(__x86_64__) || defined(__aarch64__) || defined(__arm__)
 void umvu_peek_syscall(arch_regs_struct *regs,
 		struct syscall_descriptor_t *syscall_desc,
 		peekpokeop_t op)
@@ -47,17 +48,17 @@ void umvu_peek_syscall(arch_regs_struct *regs,
 	if (regs && syscall_desc) {
 		if (op == PEEK_ARGS) {
 			syscall_desc->orig_syscall_number =
-				syscall_desc->syscall_number = regs->orig_rax;
-			syscall_desc->syscall_args[0] = regs->rdi;
-			syscall_desc->syscall_args[1] = regs->rsi;
-			syscall_desc->syscall_args[2] = regs->rdx;
-			syscall_desc->syscall_args[3] = regs->r10;
-			syscall_desc->syscall_args[4] = regs->r8;
-			syscall_desc->syscall_args[5] = regs->r9;
-			syscall_desc->prog_counter = regs->rip;
-			syscall_desc->stack_pointer = regs->rsp;
+				syscall_desc->syscall_number = regs->SYSCALL_NO;
+			syscall_desc->syscall_args[0] = regs->SYSCALL_ARG1;
+			syscall_desc->syscall_args[1] = regs->SYSCALL_ARG2;
+			syscall_desc->syscall_args[2] = regs->SYSCALL_ARG3;
+			syscall_desc->syscall_args[3] = regs->SYSCALL_ARG4;
+			syscall_desc->syscall_args[4] = regs->SYSCALL_ARG5;
+			syscall_desc->syscall_args[5] = regs->SYSCALL_ARG6;
+			syscall_desc->prog_counter = regs->PROGRAM_COUNTER;
+			syscall_desc->stack_pointer = regs->STACK_POINTER;
 		} else
-			syscall_desc->orig_ret_value = regs->rax;
+			syscall_desc->orig_ret_value = regs->SYSCALL_RETURN;
 	}
 }
 
@@ -69,32 +70,32 @@ int umvu_poke_syscall(arch_regs_struct *regs,
 		switch (op) {
 			case POKE_ARGS:
 				/* regs->rsp is missing as stack pointer should not be modified */
-				if (regs->orig_rax == (unsigned) syscall_desc->syscall_number &&
-						regs->rdi == syscall_desc->syscall_args[0] &&
-						regs->rsi == syscall_desc->syscall_args[1] &&
-						regs->rdx == syscall_desc->syscall_args[2] &&
-						regs->r10 == syscall_desc->syscall_args[3] &&
-						regs->r8 == syscall_desc->syscall_args[4] &&
-						regs->r9 == syscall_desc->syscall_args[5] &&
-						regs->rip == syscall_desc->prog_counter)
+				if (regs->SYSCALL_NO == (unsigned) syscall_desc->syscall_number &&
+						regs->SYSCALL_ARG1 == syscall_desc->syscall_args[0] &&
+						regs->SYSCALL_ARG2 == syscall_desc->syscall_args[1] &&
+						regs->SYSCALL_ARG3 == syscall_desc->syscall_args[2] &&
+						regs->SYSCALL_ARG4 == syscall_desc->syscall_args[3] &&
+						regs->SYSCALL_ARG5 == syscall_desc->syscall_args[4] &&
+						regs->SYSCALL_ARG6 == syscall_desc->syscall_args[5] &&
+						regs->PROGRAM_COUNTER == syscall_desc->prog_counter)
 					return 0;
-				regs->orig_rax = regs->rax = syscall_desc->syscall_number;
-				regs->rdi = syscall_desc->syscall_args[0];
-				regs->rsi = syscall_desc->syscall_args[1];
-				regs->rdx = syscall_desc->syscall_args[2];
-				regs->r10 = syscall_desc->syscall_args[3];
-				regs->r8 = syscall_desc->syscall_args[4];
-				regs->r9 = syscall_desc->syscall_args[5];
-				regs->rip = syscall_desc->prog_counter;
+				regs->SYSCALL_NO = regs->SYSCALL_RETURN = syscall_desc->syscall_number;
+				regs->SYSCALL_ARG1 = syscall_desc->syscall_args[0];
+				regs->SYSCALL_ARG2 = syscall_desc->syscall_args[1];
+				regs->SYSCALL_ARG3 = syscall_desc->syscall_args[2];
+				regs->SYSCALL_ARG4 = syscall_desc->syscall_args[3];
+				regs->SYSCALL_ARG5 = syscall_desc->syscall_args[4];
+				regs->SYSCALL_ARG6 = syscall_desc->syscall_args[5];
+				regs->PROGRAM_COUNTER = syscall_desc->prog_counter;
 				break;
 			case POKE_RETVALUE:
-				if (regs->rax == syscall_desc->ret_value)
+				if (regs->SYSCALL_RETURN == syscall_desc->ret_value)
 					return 0;
-				regs->rax = syscall_desc->ret_value;
+				regs->SYSCALL_RETURN = syscall_desc->ret_value;
 				break;
 			case SKIP_SETRETVALUE:
-				regs->orig_rax = -1;
-				regs->rax = syscall_desc->ret_value;
+				regs->SYSCALL_NO = -1;
+				regs->SYSCALL_RETURN = syscall_desc->ret_value;
 				break;
 		}
 		return 1;

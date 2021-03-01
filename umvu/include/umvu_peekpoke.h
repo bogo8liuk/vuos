@@ -8,7 +8,7 @@
 #include <stdint.h>
 
 /*Architecture dependent part*/
-#if defined(__x86_64__) || defined(__i386__)
+#if defined(__x86_64__) || defined(__i386__) || defined(__aarch64__) || (__arm__)
 
 #define SYSCALL_ARG_NR 6
 typedef unsigned long int syscall_arg_t;

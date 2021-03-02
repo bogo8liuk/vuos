@@ -30,7 +30,7 @@ with open(sys.argv[1]) as f:
 		if acceptable(line):
 			syscall_list += get_syscall_names(line)
 
-syscall_number = -4096
+syscall_number = 4095
 for syscall in syscall_list:
 	syscall_def = '__NR_' + syscall
 	print('''#ifndef {0}

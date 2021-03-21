@@ -30,10 +30,20 @@ with open(sys.argv[1]) as f:
 		if acceptable(line):
 			syscall_list += get_syscall_names(line)
 
-syscall_number = 4095
+print('''#ifndef __VU_SYSCALL_NO__
+#define __VU_SYSCALL_NO__
+
+#include <sys/syscall.h>
+
+''')
+
+syscall_number = -4096
 for syscall in syscall_list:
 	syscall_def = '__NR_' + syscall
 	print('''#ifndef {0}
+#	define POSTDEF{0}
 #	define {0}	{1}
 #endif\n'''.format(syscall_def, syscall_number))
 	syscall_number -= 1
+
+print('\n\n#endif')

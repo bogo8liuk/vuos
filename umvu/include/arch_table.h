@@ -7,7 +7,7 @@
 	 during the building/compilation process. The source file to generate
 	 arch_table.c is vu_syscall.conf */
 
-#define SYSCALL_NR_OVERESTIMATION 4096
+#define SYSCALL_NR_OVERESTIMATION 512
 
 /* This is the mapping between the system calls numbers as defined
 	 by the kernel for the current architecure and the correspondant

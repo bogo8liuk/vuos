@@ -17,6 +17,7 @@ print('''#ifndef R_TABLE_H
 
 #include <unistd.h>
 #include <sys/syscall.h>
+#include <alternative_calls.h>
 
 extern long (*native_syscall)();
 ''')

@@ -32,6 +32,7 @@
 #include <umvu_peekpoke.h>
 #include <hashtable.h>
 #include <r_table.h>
+#include <syscall_no.h>
 #include <vu_fs.h>
 #include <vu_fd_table.h>
 #include <linux_32_64.h>

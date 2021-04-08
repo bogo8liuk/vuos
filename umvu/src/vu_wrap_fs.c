@@ -36,6 +36,7 @@
 #include <vu_fd_table.h>
 #include <vu_fs.h>
 #include <syscall_defs.h>
+#include <syscall_no.h>
 #include <vu_execute.h>
 #include <service.h>
 #include <path_utils.h>

@@ -1,3 +1,8 @@
+#ifndef __ALTERNATIVE_CALLS__H
+#define __ALTERNATIVE_CALLS__H
+
+#include <sys/syscall.h>
+
 #if !defined(__NR_lstat) && !defined(__NR3264_lstat)
 #include <fcntl.h>
 #if defined(__NR_fstatat)
@@ -85,4 +90,6 @@
 #elif defined(__NR3264_clone)
 #   define  r_fork()    native_syscall(__NR3264_clone, SIGCHLD, NULL, NULL, NULL, NULL)
 #endif
+#endif
+
 #endif

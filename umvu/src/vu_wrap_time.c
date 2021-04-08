@@ -27,6 +27,7 @@
 #include <sys/syscall.h>
 #include <sys/time.h>
 #include <syscall_defs.h>
+#include <syscall_no.h>
 #include <xcommon.h>
 #include <hashtable.h>
 #include <service.h>

@@ -35,6 +35,7 @@
 #include <hashtable.h>
 #include <arch_table.h>
 #include <syscall_defs.h>
+#include <syscall_no.h>
 #include <vu_execute.h>
 #include <service.h>
 #include <epoch.h>

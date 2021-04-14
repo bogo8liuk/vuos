@@ -1,8 +1,3 @@
-#ifndef __ALTERNATIVE_CALLS__H
-#define __ALTERNATIVE_CALLS__H
-
-#include <sys/syscall.h>
-
 #if !defined(__NR_lstat) && !defined(__NR3264_lstat)
 #include <fcntl.h>
 #if defined(__NR_fstatat)
@@ -58,20 +53,19 @@
 
 #if !defined(__NR_poll) && !defined(__NR3264_poll)
 #include <time.h>
+#include <poll.h>
+static inline long __raw_poll(long __nr_syscall, struct pollfd *__fds, nfds_t __nfds, int __timeout) {
+    if (0 > __timeout) {
+        return syscall(__nr_syscall, __fds, __nfds, NULL, NULL);
+    }
+
+    const struct timespec tmo = { .tv_sec = (long) __timeout, .tv_nsec = 0 };
+    return syscall(__nr_syscall, __fds, __nfds, &tmo, NULL);
+}
 #if defined(__NR_ppoll)
-#   define  r_poll(fds, nfds, timeout)    (timeout < 0)                                                                     \
-                                              ? native_syscall(__NR_ppoll, fds, nfds, NULL, NULL)                           \
-                                              : ({                                                                          \
-                                                    const struct timespec tmo = { .tv_sec = (long) timeout, .tv_nsec = 0 }; \
-                                                    native_syscall(__NR_ppoll, fds, nfds, &tmo, NULL);                      \
-                                                })
-#elif defined(__NR3264_fstatat)
-#   define  r_poll(fds, nfds, timeout)    (timeout < 0)                                                                     \
-                                              ? native_syscall(__NR3264_ppoll, fds, nfds, NULL, NULL)                       \
-                                              : ({                                                                          \
-                                                    const struct timespec tmo = { .tv_sec = (long) timeout, .tv_nsec = 0 }; \
-                                                    native_syscall(__NR3264_ppoll, fds, nfds, &tmo, NULL);                  \
-                                                })
+#   define  r_poll(fds, nfds, timeout)    __raw_poll(__NR_ppoll, fds, nfds, timeout)
+#elif defined(__NR3264_ppoll)
+#   define  r_poll(fds, nfds, timeout)    __raw_poll(__NR3264_ppoll, fds, nfds, timeout)
 #endif
 #endif
 
@@ -84,12 +78,23 @@
 #endif
 
 #if !defined(__NR_fork) && !defined(__NR3264_fork)
+#define _GNU_SOURCE
 #include <signal.h>
-#if defined(__NR_clone)
-#   define  r_fork()    native_syscall(__NR_clone, SIGCHLD, NULL, NULL, NULL, NULL)
-#elif defined(__NR3264_clone)
-#   define  r_fork()    native_syscall(__NR3264_clone, SIGCHLD, NULL, NULL, NULL, NULL)
-#endif
-#endif
+#include <sched.h>
+static inline pid_t __raw_fork(long __nr_syscall) {
+    pid_t ppid;
 
+#if defined(__aarch64__) || defined(__arm__)
+    return syscall(__nr_syscall, CLONE_CHILD_CLEARTID | CLONE_CHILD_SETTID | SIGCHLD,
+        NULL, &ppid, 0, NULL);
+#elif defined(__x86_64__)
+    return syscall(__nr_syscall, CLONE_CHILD_CLEARTID | CLONE_CHILD_SETTID | SIGCHLD,
+        NULL, &ppid, NULL, 0);
+#endif
+}
+#if defined(__NR_clone)
+#   define  r_fork()    __raw_fork(__NR_clone)
+#elif defined(__NR3264_clone)
+#   define  r_fork()    __raw_fork(__NR3264_clone)
+#endif
 #endif
